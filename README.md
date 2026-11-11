@@ -82,7 +82,39 @@ $ echo {"a": [1, 2]} | jsonlens get - a[1]
 ```
 
 Options: `--raw` (unquoted strings), `--paths` (show where each match came
-from), `--compact` (single-line JSON).
+from), `--compact` (single-line JSON), `--format csv|tsv`.
+
+### CSV and TSV output
+
+`--format csv` (or `tsv`) turns a list of objects into a table. The header is
+the union of all keys in first-seen order, missing values and `null` are empty
+cells, booleans are `true`/`false`, and nested values are written as compact
+JSON. A list of plain values becomes a single `value` column. Mixed results
+(objects and scalars together) are an error, and `--format` cannot be combined
+with `--paths`, `--raw` or `--compact`.
+
+```
+$ jsonlens get shop.json menu --format csv
+item,price,tags,vegan
+Espresso,3,"[""hot"",""coffee""]",
+Cold Brew,4.5,"[""cold""]",
+Croissant,3.25,,false
+[exit 0]
+
+$ jsonlens get shop.json menu[*] --format tsv
+item	price	tags	vegan
+Espresso	3	"[""hot"",""coffee""]"	
+Cold Brew	4.5	"[""cold""]"	
+Croissant	3.25		false
+[exit 0]
+
+$ jsonlens get shop.json menu[*].item --format csv
+value
+Espresso
+Cold Brew
+Croissant
+[exit 0]
+```
 
 ## tree
 

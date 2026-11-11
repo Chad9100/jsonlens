@@ -184,6 +184,12 @@ def add_parser(sub):
     p.add_argument("--raw", action="store_true", help="print strings without quotes")
     p.add_argument("--paths", action="store_true", help="prefix each match with its concrete path")
     p.add_argument("--compact", action="store_true", help="single-line JSON output")
+    p.add_argument(
+        "--format",
+        choices=["json", "csv", "tsv"],
+        default="json",
+        help="output format; csv/tsv need a list of objects or plain values",
+    )
     p.set_defaults(func=run)
 
 
@@ -200,6 +206,15 @@ def run(args):
     if not matches:
         print(f"jsonlens: no match for {args.path!r}", file=sys.stderr)
         return 1
+
+    if args.format != "json":
+        if args.paths or args.raw or args.compact:
+            raise JsonLensError("--format csv/tsv cannot be combined with --paths, --raw or --compact")
+        from . import tabular
+
+        records = tabular.rows_from([v for _, v in matches], not has_wildcard(tokens))
+        sys.stdout.write(tabular.render(records, args.format))
+        return 0
 
     def show(value):
         if args.raw and isinstance(value, str):

@@ -1,7 +1,7 @@
 # Roadmap
 
 Ideas for future versions, roughly in priority order. (Done: recursive
-descent `..name`, `diff --key`.)
+descent `..name`, `diff --key`, `get --format csv|tsv`.)
 
 1. **Filter expressions in paths**, e.g. `users[?(@.age > 30)].name`, so
    `get` can select by value and not only by position or name.
@@ -11,8 +11,7 @@ descent `..name`, `diff --key`.)
    plus `--no-color`.
 4. **JSON Lines support everywhere**, not only in `schema`: `get`, `tree`
    and `diff` over each record of a `.jsonl` file.
-5. **Output formats for `get`**: CSV and TSV for lists of flat objects.
-6. **Validate against a schema** (`jsonlens validate FILE SCHEMA`) reusing
+5. **Validate against a schema** (`jsonlens validate FILE SCHEMA`) reusing
    the schema file that `schema` writes.
-7. **Streaming for very large files** so `tree` and `schema` do not need the
+6. **Streaming for very large files** so `tree` and `schema` do not need the
    whole document in memory.
