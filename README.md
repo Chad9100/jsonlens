@@ -136,7 +136,40 @@ $ jsonlens diff shop.json shop2.json
 [exit 1]
 ```
 
-Options: `--json` (machine-readable), `-q` (exit code only).
+### Matching array elements by key
+
+By default arrays are compared by index, so reordering a list of records
+makes everything look changed. `--key FIELD` matches the objects of an array
+by the value of `FIELD` instead. With `users.json` and a reordered, edited
+`users2.json`:
+
+```
+$ jsonlens diff users.json users2.json
+~ users[0].id: 1 -> 3
+~ users[0].name: "Ann" -> "Cy"
+~ users[0].role: "dev" -> "qa"
+~ users[1].id: 2 -> 1
+~ users[1].name: "Bob" -> "Ann"
+~ users[1].role: "ops" -> "lead"
+~ users[2].id: 3 -> 4
+~ users[2].name: "Cy" -> "Di"
+~ users[2].role: "qa" -> "dev"
+9 differences
+[exit 1]
+
+$ jsonlens diff --key id users.json users2.json
+~ users[id=1].role: "dev" -> "lead"
+- users[id=2]: {"id":2,"name":"Bob","role":"ops"}
++ users[id=4]: {"id":4,"name":"Di","role":"dev"}
+3 differences
+[exit 1]
+```
+
+An array is matched by key only if every element is an object whose `FIELD`
+is a unique string or number, in both documents; otherwise that array falls
+back to index comparison.
+
+Options: `--key FIELD`, `--json` (machine-readable), `-q` (exit code only).
 
 ## Errors and exit codes
 

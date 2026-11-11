@@ -4,7 +4,7 @@ import json
 
 from .errors import JsonLensError
 from .loader import load
-from .paths import format_path
+from .paths import KeyedItem, format_path
 
 
 def _same_kind(a, b):
@@ -16,24 +16,56 @@ def _same_kind(a, b):
     return type(a) is type(b)
 
 
-def diff(a, b, trail=None):
-    """Return a list of (kind, trail, old, new); kind is 'added', 'removed' or 'changed'."""
+def _keyed(items, key):
+    """Map identity -> element if every item is an object with a unique
+    string/number key value; otherwise None (caller falls back to indexes)."""
+    seen = {}
+    for item in items:
+        if not isinstance(item, dict) or key not in item:
+            return None
+        value = item[key]
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            return None
+        if value in seen:
+            return None
+        seen[value] = item
+    return seen
+
+
+def diff(a, b, trail=None, key=None):
+    """Return a list of (kind, trail, old, new); kind is 'added', 'removed' or 'changed'.
+
+    With KEY, arrays of objects that all carry a unique KEY value are matched
+    by that value instead of by position."""
     trail = trail or []
     if isinstance(a, dict) and isinstance(b, dict):
         out = []
-        for key in a:
-            if key in b:
-                out.extend(diff(a[key], b[key], trail + [key]))
+        for k in a:
+            if k in b:
+                out.extend(diff(a[k], b[k], trail + [k], key))
             else:
-                out.append(("removed", trail + [key], a[key], None))
-        for key in b:
-            if key not in a:
-                out.append(("added", trail + [key], None, b[key]))
+                out.append(("removed", trail + [k], a[k], None))
+        for k in b:
+            if k not in a:
+                out.append(("added", trail + [k], None, b[k]))
         return out
     if isinstance(a, list) and isinstance(b, list):
         out = []
+        if key is not None:
+            ma, mb = _keyed(a, key), _keyed(b, key)
+            if ma is not None and mb is not None:
+                for ident, item in ma.items():
+                    t = trail + [KeyedItem(key, ident)]
+                    if ident in mb:
+                        out.extend(diff(item, mb[ident], t, key))
+                    else:
+                        out.append(("removed", t, item, None))
+                for ident, item in mb.items():
+                    if ident not in ma:
+                        out.append(("added", trail + [KeyedItem(key, ident)], None, item))
+                return out
         for i in range(min(len(a), len(b))):
-            out.extend(diff(a[i], b[i], trail + [i]))
+            out.extend(diff(a[i], b[i], trail + [i], key))
         for i in range(len(b), len(a)):
             out.append(("removed", trail + [i], a[i], None))
         for i in range(len(a), len(b)):
@@ -63,7 +95,13 @@ def add_parser(sub):
     p = sub.add_parser("diff", help="structural diff of two JSON documents")
     p.add_argument("a", help="first JSON file, or '-' for stdin")
     p.add_argument("b", help="second JSON file, or '-' for stdin")
-    p.add_argument("--json", action="store_true", help="emit the changes as a JSON array")
+    p.add_argument(
+        "--key",
+        metavar="FIELD",
+        help="match array elements by this field instead of by index "
+        "(arrays whose objects lack a unique FIELD still compare by index)",
+    )
+    p.add_argument("--json",action="store_true", help="emit the changes as a JSON array")
     p.add_argument("-q", "--quiet", action="store_true", help="print nothing, only set the exit code")
     p.set_defaults(func=run)
 
@@ -71,7 +109,7 @@ def add_parser(sub):
 def run(args):
     if args.a == "-" and args.b == "-":
         raise JsonLensError("only one of the two inputs can be '-' (stdin)")
-    changes = diff(load(args.a), load(args.b))
+    changes = diff(load(args.a), load(args.b), key=args.key)
     if not args.quiet:
         if args.json:
             print(

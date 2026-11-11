@@ -99,6 +99,60 @@ def test_cli_quiet(run, write):
     assert code == 1 and out == ""
 
 
+def _fmt(changes):
+    return [format_change(c) for c in changes]
+
+
+def test_key_matches_reordered_records():
+    a = {"u": [{"id": 1, "n": "x"}, {"id": 2, "n": "y"}]}
+    b = {"u": [{"id": 2, "n": "y"}, {"id": 1, "n": "x"}]}
+    assert diff(a, b) != []
+    assert diff(a, b, key="id") == []
+
+
+def test_key_reports_change_add_remove():
+    a = [{"id": 1, "n": "x"}, {"id": "b", "n": "y"}]
+    b = [{"id": "c", "n": "z"}, {"id": 1, "n": "w"}]
+    assert _fmt(diff(a, b, key="id")) == [
+        '~ [id=1].n: "x" -> "w"',
+        '- [id="b"]: {"id":"b","n":"y"}',
+        '+ [id="c"]: {"id":"c","n":"z"}',
+    ]
+
+
+def test_key_nested_arrays():
+    a = {"g": [{"id": 1, "items": [{"id": 5, "v": 1}]}]}
+    b = {"g": [{"id": 1, "items": [{"id": 5, "v": 2}]}]}
+    assert _fmt(diff(a, b, key="id")) == ["~ g[id=1].items[id=5].v: 1 -> 2"]
+
+
+def test_key_falls_back_to_index_when_not_unique_or_missing():
+    dup = [{"id": 1}, {"id": 1}]
+    assert _fmt(diff(dup, [{"id": 1}, {"id": 2}], key="id")) == ["~ [1].id: 1 -> 2"]
+    assert _fmt(diff([{"x": 1}], [{"x": 2}], key="id")) == ["~ [0].x: 1 -> 2"]
+    assert _fmt(diff([1, 2], [1, 3], key="id")) == ["~ [1]: 2 -> 3"]
+
+
+def test_key_bool_values_not_identity():
+    assert _fmt(diff([{"id": True}], [{"id": False}], key="id")) == ["~ [0].id: true -> false"]
+
+
+def test_cli_key(run, write):
+    a = write("a.json", [{"id": 1, "n": "x"}, {"id": 2, "n": "y"}])
+    b = write("b.json", [{"id": 2, "n": "y"}, {"id": 1, "n": "x"}])
+    code, out, _ = run("diff", a, b)
+    assert code == 1
+    code, out, _ = run("diff", a, b, "--key", "id")
+    assert code == 0 and out == ""
+
+
+def test_cli_key_json_path(run, write):
+    a = write("a.json", [{"id": 1, "n": "x"}])
+    b = write("b.json", [{"id": 1, "n": "y"}])
+    code, out, _ = run("diff", a, b, "--key", "id", "--json")
+    assert json.loads(out)[0]["path"] == "[id=1].n"
+
+
 def test_cli_stdin_as_first(run, write, stdin):
     stdin('{"a": 1}')
     code, out, _ = run("diff", "-", write("b.json", {"a": 1}))

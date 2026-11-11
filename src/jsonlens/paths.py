@@ -124,11 +124,20 @@ def _bracket(s, i, text):
     return j + 1, tok
 
 
+class KeyedItem(tuple):
+    """Display-only token for an array element matched by key (diff --key)."""
+
+    def __new__(cls, field, value):
+        return super().__new__(cls, (field, value))
+
+
 def format_path(tokens):
     """Render tokens back into canonical path text (`$` for the root)."""
     out = ""
     for tok in tokens:
-        if tok is Wild:
+        if isinstance(tok, KeyedItem):
+            out += f"[{tok[0]}={json.dumps(tok[1], ensure_ascii=False)}]"
+        elif tok is Wild:
             out += "[*]"
         elif isinstance(tok, int):
             out += f"[{tok}]"
