@@ -52,7 +52,7 @@ def test_parse_leading_bracket():
     assert parse_path("[0].x") == [0, "x"]
 
 
-@pytest.mark.parametrize("bad", ["a..b", "a.", "a[", "a[x]", "a[1", "a[0]b", 'a["x]'])
+@pytest.mark.parametrize("bad", ["a...b", "a.", "a[", "a[x]", "a[1", "a[0]b", 'a["x]'])
 def test_parse_errors(bad):
     with pytest.raises(JsonLensError, match="bad path"):
         parse_path(bad)
@@ -149,7 +149,7 @@ def test_cli_no_match_exit_1(run, write):
 
 
 def test_cli_bad_path_exit_2(run, write):
-    code, _, err = run("get", write("d.json", DOC), "a..b")
+    code, _, err = run("get", write("d.json", DOC), "a...b")
     assert code == 2 and "bad path" in err
 
 

@@ -33,7 +33,21 @@ ignored. All output below is real output copied from runs of the tool.
 ## get
 
 Path syntax: `a.b`, `a[0]`, `a[-1]`, `a[*]` / `a.*` (wildcards), and
-`["key.with.dots"]` for awkward keys. A leading `$` is optional.
+`["key.with.dots"]` for awkward keys. `..name` finds a key at any depth
+(recursive descent, results in document order, always printed as a list) and
+`..*` lists every descendant. A leading `$` is optional.
+
+```
+$ jsonlens get shop.json ..name --compact
+["Maria","oat milk"]
+[exit 0]
+
+$ jsonlens get shop.json ..price --paths
+menu[0].price = 3
+menu[1].price = 3.25
+[exit 0]
+```
+
 
 ```
 $ jsonlens get shop.json menu[*].item

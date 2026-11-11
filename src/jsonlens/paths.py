@@ -1,7 +1,8 @@
 """Path expressions and the `get` command.
 
 Syntax: `a.b[0].c`, `items[-1]`, `users[*].name`, `config.*`,
-`["key.with.dots"]`. A leading `$` (root) is optional; `$` alone is the root.
+`["key.with.dots"]`, `..name` (that key at any depth), `..*` (every
+descendant). A leading `$` (root) is optional; `$` alone is the root.
 """
 
 import json
@@ -29,7 +30,18 @@ def parse_path(text):
     first = True
     while i < n:
         c = s[i]
-        if c == ".":
+        if c == "." and s.startswith("..", i):
+            i += 2
+            if i >= n or s[i] == ".":
+                raise JsonLensError(f"bad path {text!r}: nothing to search for after '..' at position {i}")
+            tokens.append(Descend)
+            if s[i] == "*":
+                tokens.append(Wild)
+                i += 1
+            elif s[i] != "[":
+                i, key = _bare_key(s, i)
+                tokens.append(key)
+        elif c == ".":
             i += 1
             if i >= n or s[i] in ".[":
                 raise JsonLensError(f"bad path {text!r}: empty key after '.' at position {i}")
@@ -57,6 +69,25 @@ class _WildType:
 
 
 Wild = _WildType()
+
+
+class _DescendType:
+    def __repr__(self):
+        return "Descend"
+
+
+Descend = _DescendType()
+
+
+def _walk(value, trail):
+    """Yield (trail, value) for VALUE and every descendant, parents first."""
+    yield trail, value
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield from _walk(v, trail + [k])
+    elif isinstance(value, list):
+        for k, v in enumerate(value):
+            yield from _walk(v, trail + [k])
 
 
 def _bare_key(s, i):
@@ -114,7 +145,9 @@ def query(data, tokens):
     for tok in tokens:
         nxt = []
         for trail, value in current:
-            if tok is Wild:
+            if tok is Descend:
+                nxt.extend(_walk(value, trail))
+            elif tok is Wild:
                 if isinstance(value, dict):
                     nxt.extend((trail + [k], v) for k, v in value.items())
                 elif isinstance(value, list):
@@ -132,7 +165,7 @@ def query(data, tokens):
 
 
 def has_wildcard(tokens):
-    return any(t is Wild for t in tokens)
+    return any(t is Wild or t is Descend for t in tokens)
 
 
 def add_parser(sub):
