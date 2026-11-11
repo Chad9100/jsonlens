@@ -8,10 +8,10 @@ import argparse
 import sys
 
 from . import __version__
-from . import paths, schema, tree
+from . import diff, paths, schema, tree
 from .errors import JsonLensError
 
-COMMANDS = [paths, tree, schema]
+COMMANDS = [paths, tree, schema, diff]
 
 
 def build_parser():
