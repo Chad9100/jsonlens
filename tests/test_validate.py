@@ -1,0 +1,101 @@
+import json
+
+from jsonlens.schema import infer
+from jsonlens.validate import validate
+
+
+def msgs(value, schema):
+    from jsonlens.paths import format_path
+
+    return [(format_path(t), m) for t, m in validate(value, schema)]
+
+
+def test_inferred_schema_accepts_its_source():
+    doc = {"a": [1, 2.5, None], "b": {"c": "x"}}
+    assert validate(doc, infer(doc)) == []
+
+
+def test_type_mismatch():
+    assert msgs("x", {"type": "integer"}) == [("$", "expected integer, got string")]
+
+
+def test_bool_is_not_number():
+    assert msgs(True, {"type": "number"})
+
+
+def test_integer_accepts_whole_float_and_number_accepts_int():
+    assert validate(3.0, {"type": "integer"}) == []
+    assert validate(3, {"type": "number"}) == []
+    assert msgs(3.5, {"type": "integer"})
+
+
+def test_type_list():
+    assert validate(None, {"type": ["string", "null"]}) == []
+    assert msgs(1, {"type": ["string", "null"]}) == [
+        ("$", "expected string or null, got integer")
+    ]
+
+
+def test_required_and_nested_paths():
+    schema = {
+        "type": "object",
+        "properties": {"u": {"type": "array", "items": {"type": "object",
+                    "properties": {"age": {"type": "integer"}}, "required": ["id"]}}},
+    }
+    result = msgs({"u": [{"id": 1, "age": "x"}, {"age": 2}]}, schema)
+    assert result == [
+        ("u[0].age", "expected integer, got string"),
+        ("u[1]", "missing required key 'id'"),
+    ]
+
+
+def test_enum_min_max_length():
+    assert msgs("z", {"enum": ["a", "b"]}) == [("$", 'not one of ["a", "b"]')]
+    assert msgs(5, {"minimum": 6}) == [("$", "5 is below minimum 6")]
+    assert msgs(5, {"maximum": 4}) == [("$", "5 is above maximum 4")]
+    assert msgs("ab", {"minLength": 3})
+    assert msgs("abc", {"maxLength": 2})
+
+
+def test_cli_valid(run, write):
+    d = write("d.json", {"a": 1})
+    s = write("s.json", {"type": "object", "required": ["a"]})
+    code, out, _ = run("validate", d, s)
+    assert code == 0 and out.strip() == "valid"
+
+
+def test_cli_invalid(run, write):
+    d = write("d.json", {"a": "x"})
+    s = write("s.json", {"properties": {"a": {"type": "integer"}}, "required": ["b"]})
+    code, out, _ = run("validate", d, s)
+    assert code == 1
+    assert "$: missing required key 'b'" in out
+    assert "a: expected integer, got string" in out
+    assert out.strip().endswith("2 problems")
+
+
+def test_cli_quiet(run, write):
+    d = write("d.json", 1)
+    s = write("s.json", {"type": "string"})
+    code, out, _ = run("validate", d, s, "-q")
+    assert code == 1 and out == ""
+
+
+def test_cli_stdin_and_roundtrip(run, write, stdin):
+    s = write("s.json", json.dumps(infer({"a": [1]})))
+    stdin('{"a": ["no"]}')
+    code, out, _ = run("validate", "-", s)
+    assert code == 1 and "a[0]: expected integer, got string" in out
+
+
+def test_cli_bad_schema_and_unknown_type(run, write):
+    d = write("d.json", 1)
+    code, _, err = run("validate", d, write("s.json", [1]))
+    assert code == 2 and "schema" in err
+    code, _, err = run("validate", d, write("t.json", {"type": "blob"}))
+    assert code == 2 and "unknown type" in err
+
+
+def test_cli_both_stdin(run):
+    code, _, err = run("validate", "-", "-")
+    assert code == 2

@@ -203,6 +203,33 @@ back to index comparison.
 
 Options: `--key FIELD`, `--json` (machine-readable), `-q` (exit code only).
 
+## validate
+
+`jsonlens validate FILE SCHEMA` checks a document against a schema file,
+such as one written by `jsonlens schema`. Supported keywords: `type` (a name
+or a list), `properties`, `required`, `items`, `enum`, `minimum`, `maximum`,
+`minLength`, `maxLength`; anything else is ignored. Every problem is
+reported with its path. Exit code 0 means valid, 1 means problems found.
+`-q` prints nothing. `rules.json` is a hand-written schema (price must be a
+number, `item` and `price` required) and `bad.json` breaks it.
+
+```
+$ jsonlens schema shop.json > s.json
+$ jsonlens validate shop.json s.json
+valid
+[exit 0]
+
+$ jsonlens validate bad.json rules.json
+shop: expected string, got integer
+menu[0].price: expected number, got string
+menu[1]: missing required key 'item'
+3 problems
+[exit 1]
+
+$ jsonlens validate -q bad.json rules.json
+[exit 1]
+```
+
 ## Errors and exit codes
 
 ```
@@ -214,7 +241,7 @@ jsonlens: error: bad.json: invalid JSON at line 1, column 9: Expecting property 
 | Code | Meaning |
 | ---- | ------- |
 | 0 | Success (for `diff`: documents are identical) |
-| 1 | `get` found no match, or `diff` found differences |
+| 1 | `get` found no match, `diff` found differences, or `validate` found problems |
 | 2 | Error: missing file, invalid JSON, bad path, bad usage |
 
 ## Development
