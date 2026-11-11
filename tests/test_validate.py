@@ -96,6 +96,58 @@ def test_cli_bad_schema_and_unknown_type(run, write):
     assert code == 2 and "unknown type" in err
 
 
+def test_pattern():
+    s = {"type": "string", "pattern": "^[a-z]+-\\d+$"}
+    assert validate("ab-12", s) == []
+    assert msgs("AB", s) == [("$", "does not match pattern '^[a-z]+-\\\\d+$'")]
+    assert validate(5, {"pattern": "x"}) == []
+
+
+def test_bad_pattern_is_an_error(run, write):
+    code, _, err = run("validate", write("d.json", '"x"'), write("s.json", {"pattern": "("}))
+    assert code == 2 and "bad pattern" in err
+
+
+def test_additional_properties_false_and_schema():
+    s = {"properties": {"a": {}}, "additionalProperties": False}
+    assert msgs({"a": 1, "b": 2}, s) == [("b", "additional property not allowed")]
+    assert validate({"a": 1}, s) == []
+    s2 = {"properties": {"a": {}}, "additionalProperties": {"type": "integer"}}
+    assert msgs({"a": "x", "b": "y"}, s2) == [("b", "expected integer, got string")]
+    assert validate({"a": "x", "b": 1}, s2) == []
+
+
+def test_any_of_and_one_of():
+    any_s = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+    assert validate(1, any_s) == []
+    assert msgs(1.5, any_s) == [("$", "does not match any of the anyOf schemas")]
+    one = {"oneOf": [{"type": "integer"}, {"type": "number"}]}
+    assert msgs(3, one) == [("$", "matches 2 of the oneOf schemas, expected exactly 1")]
+    assert validate(3.5, one) == []
+    assert msgs("x", one) == [("$", "does not match any of the oneOf schemas")]
+
+
+def test_ref_to_definitions_and_recursion():
+    s = {
+        "type": "object",
+        "properties": {"home": {"$ref": "#/definitions/addr"}, "kids": {"type": "array", "items": {"$ref": "#"}}},
+        "definitions": {"addr": {"type": "object", "required": ["zip"]}},
+    }
+    assert validate({"home": {"zip": 1}, "kids": [{}]}, s) == []
+    assert msgs({"home": {}, "kids": [{"home": {}}]}, s) == [
+        ("home", "missing required key 'zip'"),
+        ("kids[0].home", "missing required key 'zip'"),
+    ]
+
+
+def test_bad_ref(run, write):
+    d = write("d.json", 1)
+    code, _, err = run("validate", d, write("s.json", {"$ref": "#/nope"}))
+    assert code == 2 and "cannot resolve" in err
+    code, _, err = run("validate", d, write("t.json", {"$ref": "http://x/y"}))
+    assert code == 2 and "local" in err
+
+
 def test_cli_both_stdin(run):
     code, _, err = run("validate", "-", "-")
     assert code == 2

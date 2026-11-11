@@ -208,7 +208,9 @@ Options: `--key FIELD`, `--json` (machine-readable), `-q` (exit code only).
 `jsonlens validate FILE SCHEMA` checks a document against a schema file,
 such as one written by `jsonlens schema`. Supported keywords: `type` (a name
 or a list), `properties`, `required`, `items`, `enum`, `minimum`, `maximum`,
-`minLength`, `maxLength`; anything else is ignored. Every problem is
+`minLength`, `maxLength`, `pattern` (regex search), `additionalProperties`
+(`false` or a schema), `anyOf`, `oneOf` and local `$ref` (`#/definitions/x`,
+or `#` for the root); anything else is ignored. Every problem is
 reported with its path. Exit code 0 means valid, 1 means problems found.
 `-q` prints nothing. `rules.json` is a hand-written schema (price must be a
 number, `item` and `price` required) and `bad.json` breaks it.
@@ -227,6 +229,24 @@ menu[1]: missing required key 'item'
 [exit 1]
 
 $ jsonlens validate -q bad.json rules.json
+[exit 1]
+```
+
+A stricter schema using the newer keywords (`strict.json`: `id` must match
+`^[A-Z]-\d+$`, `tag` is a string or an integer, `owner` is a `$ref` to a
+definition requiring `name`, no other keys allowed):
+
+```
+$ jsonlens validate a.json strict.json
+valid
+[exit 0]
+
+$ jsonlens validate b.json strict.json
+id: does not match pattern '^[A-Z]-\\d+$'
+tag: does not match any of the oneOf schemas
+owner: missing required key 'name'
+extra: additional property not allowed
+4 problems
 [exit 1]
 ```
 

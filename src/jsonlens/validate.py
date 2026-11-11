@@ -2,10 +2,12 @@
 
 Supports the subset that `jsonlens schema` writes plus a few common
 keywords: type (string or list), properties, required, items, enum,
-minimum, maximum, minLength, maxLength. Unknown keywords are ignored.
+minimum, maximum, minLength, maxLength, pattern, additionalProperties,
+anyOf, oneOf and local $ref ("#/..."). Unknown keywords are ignored.
 """
 
 import json
+import re
 
 from .errors import JsonLensError
 from .loader import load
@@ -46,10 +48,30 @@ def _type_name(value):
     return "array" if isinstance(value, list) else "object"
 
 
-def validate(value, schema, trail=()):
+def _resolve(ref, root):
+    """Follow a local '#/a/b' reference inside the root schema."""
+    if not isinstance(ref, str) or not (ref == "#" or ref.startswith("#/")):
+        raise JsonLensError(f"schema: only local '#/...' references are supported, got {ref!r}")
+    node = root
+    for part in ref[2:].split("/") if ref != "#" else []:
+        part = part.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            raise JsonLensError(f"schema: cannot resolve reference {ref!r}")
+    return node
+
+
+def validate(value, schema, trail=(), root=None):
     """Return a list of (trail, message) problems; empty means valid."""
     if not isinstance(schema, dict):
         raise JsonLensError("schema: expected a JSON object at every schema position")
+    if root is None:
+        root = schema
+    if "$ref" in schema:
+        return validate(value, _resolve(schema["$ref"], root), trail, root)
     problems = []
     declared = schema.get("type")
     if declared is not None:
@@ -73,16 +95,42 @@ def validate(value, schema, trail=()):
             problems.append((trail, f"shorter than minLength {schema['minLength']}"))
         if "maxLength" in schema and len(value) > schema["maxLength"]:
             problems.append((trail, f"longer than maxLength {schema['maxLength']}"))
+        if "pattern" in schema:
+            try:
+                matched = re.search(schema["pattern"], value)
+            except re.error as exc:
+                raise JsonLensError(f"schema: bad pattern {schema['pattern']!r}: {exc}")
+            if not matched:
+                problems.append((trail, f"does not match pattern {schema['pattern']!r}"))
     if isinstance(value, dict):
         for key in schema.get("required", []):
             if key not in value:
                 problems.append((trail, f"missing required key {key!r}"))
-        for key, sub in schema.get("properties", {}).items():
+        props = schema.get("properties", {})
+        for key, sub in props.items():
             if key in value:
-                problems.extend(validate(value[key], sub, trail + (key,)))
+                problems.extend(validate(value[key], sub, trail + (key,), root))
+        extra = schema.get("additionalProperties")
+        if extra is not None:
+            for key in value:
+                if key in props:
+                    continue
+                if extra is False:
+                    problems.append((trail + (key,), "additional property not allowed"))
+                elif isinstance(extra, dict):
+                    problems.extend(validate(value[key], extra, trail + (key,), root))
     if isinstance(value, list) and "items" in schema:
         for index, element in enumerate(value):
-            problems.extend(validate(element, schema["items"], trail + (index,)))
+            problems.extend(validate(element, schema["items"], trail + (index,), root))
+    if "anyOf" in schema:
+        if not any(not validate(value, s, trail, root) for s in schema["anyOf"]):
+            problems.append((trail, "does not match any of the anyOf schemas"))
+    if "oneOf" in schema:
+        hits = sum(1 for s in schema["oneOf"] if not validate(value, s, trail, root))
+        if hits == 0:
+            problems.append((trail, "does not match any of the oneOf schemas"))
+        elif hits > 1:
+            problems.append((trail, f"matches {hits} of the oneOf schemas, expected exactly 1"))
     return problems
 
 
