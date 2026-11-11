@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jsonlens"
+version = "0.1.0"
+description = "Query, explore, infer schemas from and diff JSON files from the command line."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Chad Mowlavie" }]
+keywords = ["json", "cli", "query", "schema", "diff"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+jsonlens = "jsonlens.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Chad9100/jsonlens"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
