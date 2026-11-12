@@ -129,7 +129,7 @@ def _bracket(s, i, text):
     return j + 1, tok
 
 
-_FILTER_OPS = ("==", "!=", "<=", ">=", "<", ">")
+_FILTER_OPS = ("==", "!=", "=~", "<=", ">=", "<", ">")
 
 
 def _find_close(s, j):
@@ -193,6 +193,8 @@ def _is_num(v):
 
 
 def _compare(a, op, b):
+    if op == "=~":
+        return isinstance(a, str) and re.search(b, a) is not None
     if op in ("==", "!="):
         same = a == b and (type(a) is type(b) or (_is_num(a) and _is_num(b)))
         return same if op == "==" else not same
@@ -201,10 +203,89 @@ def _compare(a, op, b):
     return False
 
 
-def _parse_filter(body, text):
-    expr = body.strip()
-    if expr.startswith("(") and expr.endswith(")"):
+class FilterOr:
+    """`[?(A && B || C)]`: OR of AND-groups of Filter terms (`&&` binds tighter)."""
+
+    def __init__(self, groups):
+        self.groups = groups
+
+    def __repr__(self):
+        return f"FilterOr({self.groups!r})"
+
+    def __eq__(self, other):
+        return isinstance(other, FilterOr) and self.groups == other.groups
+
+    __hash__ = None
+
+    def matches(self, item):
+        return any(all(t.matches(item) for t in group) for group in self.groups)
+
+
+def _scan(expr, visit):
+    """Call VISIT(k, depth) for each character of EXPR outside quotes; stop when it returns True."""
+    quote = None
+    depth = 0
+    k = 0
+    while k < len(expr):
+        c = expr[k]
+        if quote:
+            if c == "\\":
+                k += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        else:
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            if visit(k, depth):
+                return k
+        k += 1
+    return -1
+
+
+def _strip_parens(expr):
+    """Remove outer parentheses while the first '(' matches the last ')'."""
+    expr = expr.strip()
+    while expr.startswith("(") and expr.endswith(")"):
+        closed_early = _scan(expr[:-1], lambda k, d: d == 0) >= 0
+        if closed_early:
+            break
         expr = expr[1:-1].strip()
+    return expr
+
+
+def _split_on(expr, sep):
+    """Split EXPR on SEP outside quotes and parentheses."""
+    parts = []
+    start = 0
+    k = 0
+    while k <= len(expr) - len(sep):
+        hit = _scan(expr[k:], lambda i, d: d == 0 and expr.startswith(sep, k + i))
+        if hit < 0:
+            break
+        parts.append(expr[start : k + hit])
+        start = k + hit + len(sep)
+        k = start
+    parts.append(expr[start:])
+    return parts
+
+
+def _parse_filter(body, text):
+    expr = _strip_parens(body)
+    ors = _split_on(expr, "||")
+    if len(ors) > 1 or len(_split_on(expr, "&&")) > 1:
+        groups = []
+        for part in ors:
+            terms = [_parse_term(_strip_parens(t), text) for t in _split_on(part, "&&")]
+            groups.append(terms)
+        return FilterOr(groups)
+    return _parse_term(expr, text)
+
+
+def _parse_term(expr, text):
     if not expr.startswith("@"):
         raise JsonLensError(f"bad path {text!r}: a filter must start with '@', e.g. [?(@.age > 30)]")
     # find the operator outside of quotes
@@ -230,7 +311,7 @@ def _parse_filter(body, text):
         k += 1
     left = expr if op is None else expr[:pos]
     rel = parse_path("$" + left.strip()[1:])
-    if any(t is Wild or t is Descend or isinstance(t, (Filter, _WildType)) for t in rel):
+    if any(t is Wild or t is Descend or isinstance(t, (Filter, FilterOr, _WildType)) for t in rel):
         raise JsonLensError(f"bad path {text!r}: wildcards and filters are not allowed inside a filter")
     literal = None
     if op:
@@ -243,6 +324,13 @@ def _parse_filter(body, text):
             raise JsonLensError(
                 f"bad path {text!r}: filter value {raw!r} must be a JSON literal (number, \"text\", true, false, null)"
             ) from None
+    if op == "=~":
+        if not isinstance(literal, str):
+            raise JsonLensError(f"bad path {text!r}: '=~' needs a quoted regular expression")
+        try:
+            re.compile(literal)
+        except re.error as exc:
+            raise JsonLensError(f"bad path {text!r}: invalid regular expression {literal!r}: {exc}") from None
     return Filter(rel, op, literal)
 
 
@@ -278,7 +366,7 @@ def query(data, tokens):
         for trail, value in current:
             if tok is Descend:
                 nxt.extend(_walk(value, trail))
-            elif isinstance(tok, Filter):
+            elif isinstance(tok, (Filter, FilterOr)):
                 kids = (
                     value.items()
                     if isinstance(value, dict)
@@ -303,7 +391,7 @@ def query(data, tokens):
 
 
 def has_wildcard(tokens):
-    return any(t is Wild or t is Descend or isinstance(t, Filter) for t in tokens)
+    return any(t is Wild or t is Descend or isinstance(t, (Filter, FilterOr)) for t in tokens)
 
 
 def add_parser(sub):

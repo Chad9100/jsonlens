@@ -62,6 +62,50 @@ def test_no_match_is_empty():
     assert query(DOC, parse_path("users[?(@.age > 100)]")) == []
 
 
+def test_and_or():
+    assert names('users[?(@.age > 30 && @.active == true)].name') == ["Ann", "Cy"]
+    assert names('users[?(@.age > 40 && @.active == false)].name') == []
+    assert names('users[?(@.name == "Bob" || @.name == "Di")].name') == ["Bob", "Di"]
+
+
+def test_and_binds_tighter_than_or():
+    # Bob || (age > 40 && active)  -> Ann, Bob
+    assert names('users[?(@.name == "Bob" || @.age > 40 && @.active == true)].name') == ["Ann", "Bob"]
+
+
+def test_parentheses_around_terms_and_operators_in_strings():
+    assert names('users[?((@.age > 30) && (@.address))].name') == ["Cy"]
+    doc = {"a": [{"k": "x && y"}, {"k": "z || w"}, {"k": "q"}]}
+    assert query(doc, parse_path('a[?(@.k == "x && y" || @.k == "q")]')) == [
+        (["a", 0], {"k": "x && y"}),
+        (["a", 2], {"k": "q"}),
+    ]
+
+
+def test_regex_match():
+    assert names('users[?(@.name =~ "^[AB]")].name') == ["Ann", "Bob"]
+    assert names("users[?(@.name =~ 'i$' && @.age == 'n/a')].name") == ["Di"]
+    assert names('users[?(@.age =~ "4")].name') == []  # numbers never match
+
+
+def test_parse_boolean_filter():
+    toks = parse_path("a[?(@.x > 1 && @.y == 2 || @.z)]")
+    assert has_wildcard(toks)
+    assert toks[1].groups == [
+        [Filter(["x"], ">", 1), Filter(["y"], "==", 2)],
+        [Filter(["z"], None, None)],
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["a[?(@.x > 1 &&)]", "a[?(@.x =~ 3)]", 'a[?(@.x =~ "(")]', "a[?(@.x > 1 || y)]"],
+)
+def test_bad_boolean_filters(bad):
+    with pytest.raises(JsonLensError):
+        parse_path(bad)
+
+
 @pytest.mark.parametrize(
     "bad",
     ["a[?(age > 3)]", "a[?(@.x > abc)]", "a[?(@.x > 3)", "a[?(@.*.x == 1)]", "a[?(@.x == )]"],
