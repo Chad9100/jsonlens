@@ -1,11 +1,10 @@
 # Roadmap
 
 Ideas for future versions, roughly in priority order. (Done: recursive
-descent `..name`, `diff --key`, `get --format csv|tsv`, `validate`, validate `pattern`/`oneOf`/`anyOf`/
+descent `..name`, filter expressions `[?(@.age > 30)]` (single comparison), `diff --key`, `get --format csv|tsv`, `validate`, validate `pattern`/`oneOf`/`anyOf`/
 `additionalProperties`/local `$ref`.)
 
-1. **Filter expressions in paths**, e.g. `users[?(@.age > 30)].name`, so
-   `get` can select by value and not only by position or name.
+1. **Richer filters**: `&&` / `||` and regex matching inside `[?(...)]`.
 2. **Schema output improvements**: string `format` detection (dates, emails,
    UUIDs), `enum` for low-cardinality strings, and min/max for numbers.
 3. **Colored diff and tree output** with automatic detection of a terminal,

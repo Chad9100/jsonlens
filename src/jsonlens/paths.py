@@ -2,7 +2,7 @@
 
 Syntax: `a.b[0].c`, `items[-1]`, `users[*].name`, `config.*`,
 `["key.with.dots"]`, `..name` (that key at any depth), `..*` (every
-descendant). A leading `$` (root) is optional; `$` alone is the root.
+descendant), `users[?(@.age > 30)]` (children where a comparison holds). A leading `$` (root) is optional; `$` alone is the root.
 """
 
 import json
@@ -111,6 +111,11 @@ def _bracket(s, i, text):
     elif s[j] == "*":
         tok = Wild
         j += 1
+    elif s[j] == "?":
+        end = _find_close(s, j)
+        if end < 0:
+            raise JsonLensError(f"bad path {text!r}: unclosed '[' at position {i}")
+        return end + 1, _parse_filter(s[j + 1 : end], text)
     else:
         m = _INT.match(s, j)
         if not m:
@@ -122,6 +127,123 @@ def _bracket(s, i, text):
     if j >= len(s) or s[j] != "]":
         raise JsonLensError(f"bad path {text!r}: expected ']' at position {j}")
     return j + 1, tok
+
+
+_FILTER_OPS = ("==", "!=", "<=", ">=", "<", ">")
+
+
+def _find_close(s, j):
+    """Index of the ']' closing a filter that starts at J, skipping quotes."""
+    quote = None
+    k = j
+    while k < len(s):
+        c = s[k]
+        if quote:
+            if c == "\\":
+                k += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        elif c == "]":
+            return k
+        k += 1
+    return -1
+
+
+class Filter:
+    """`[?(@.a.b > 3)]`: keep children where the relative path compares true."""
+
+    def __init__(self, rel, op, literal):
+        self.rel = rel
+        self.op = op
+        self.literal = literal
+
+    def __repr__(self):
+        return f"Filter({self.rel!r}, {self.op!r}, {self.literal!r})"
+
+    def __eq__(self, other):
+        return isinstance(other, Filter) and (self.rel, self.op, self.literal) == (
+            other.rel,
+            other.op,
+            other.literal,
+        )
+
+    __hash__ = None
+
+    def matches(self, item):
+        value = item
+        for tok in self.rel:
+            if isinstance(tok, int):
+                if isinstance(value, list) and -len(value) <= tok < len(value):
+                    value = value[tok]
+                else:
+                    return False
+            elif isinstance(value, dict) and tok in value:
+                value = value[tok]
+            else:
+                return False
+        if self.op is None:
+            return True
+        return _compare(value, self.op, self.literal)
+
+
+def _is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _compare(a, op, b):
+    if op in ("==", "!="):
+        same = a == b and (type(a) is type(b) or (_is_num(a) and _is_num(b)))
+        return same if op == "==" else not same
+    if (_is_num(a) and _is_num(b)) or (isinstance(a, str) and isinstance(b, str)):
+        return {"<": a < b, "<=": a <= b, ">": a > b, ">=": a >= b}[op]
+    return False
+
+
+def _parse_filter(body, text):
+    expr = body.strip()
+    if expr.startswith("(") and expr.endswith(")"):
+        expr = expr[1:-1].strip()
+    if not expr.startswith("@"):
+        raise JsonLensError(f"bad path {text!r}: a filter must start with '@', e.g. [?(@.age > 30)]")
+    # find the operator outside of quotes
+    quote = None
+    pos = op = None
+    k = 0
+    while k < len(expr):
+        c = expr[k]
+        if quote:
+            if c == "\\":
+                k += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        else:
+            for cand in _FILTER_OPS:
+                if expr.startswith(cand, k):
+                    pos, op = k, cand
+                    break
+            if op:
+                break
+        k += 1
+    left = expr if op is None else expr[:pos]
+    rel = parse_path("$" + left.strip()[1:])
+    if any(t is Wild or t is Descend or isinstance(t, (Filter, _WildType)) for t in rel):
+        raise JsonLensError(f"bad path {text!r}: wildcards and filters are not allowed inside a filter")
+    literal = None
+    if op:
+        raw = expr[pos + len(op) :].strip()
+        if len(raw) >= 2 and raw[0] == "'" and raw[-1] == "'":
+            raw = json.dumps(raw[1:-1])
+        try:
+            literal = json.loads(raw)
+        except ValueError:
+            raise JsonLensError(
+                f"bad path {text!r}: filter value {raw!r} must be a JSON literal (number, \"text\", true, false, null)"
+            ) from None
+    return Filter(rel, op, literal)
 
 
 class KeyedItem(tuple):
@@ -156,6 +278,13 @@ def query(data, tokens):
         for trail, value in current:
             if tok is Descend:
                 nxt.extend(_walk(value, trail))
+            elif isinstance(tok, Filter):
+                kids = (
+                    value.items()
+                    if isinstance(value, dict)
+                    else enumerate(value) if isinstance(value, list) else ()
+                )
+                nxt.extend((trail + [k], v) for k, v in kids if tok.matches(v))
             elif tok is Wild:
                 if isinstance(value, dict):
                     nxt.extend((trail + [k], v) for k, v in value.items())
@@ -174,7 +303,7 @@ def query(data, tokens):
 
 
 def has_wildcard(tokens):
-    return any(t is Wild or t is Descend for t in tokens)
+    return any(t is Wild or t is Descend or isinstance(t, Filter) for t in tokens)
 
 
 def add_parser(sub):

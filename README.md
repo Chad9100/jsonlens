@@ -37,6 +37,27 @@ Path syntax: `a.b`, `a[0]`, `a[-1]`, `a[*]` / `a.*` (wildcards), and
 (recursive descent, results in document order, always printed as a list) and
 `..*` lists every descendant. A leading `$` is optional.
 
+Filters select array elements (or object values) by value:
+`[?(@.field OP literal)]` with `==`, `!=`, `<`, `<=`, `>`, `>=`, or just
+`[?(@.field)]` to test that a field exists. The literal is a JSON value
+(`30`, `"text"`, `true`, `null`; single-quoted text also works), `@.a.b[0]`
+reaches into nested values, and ordering only compares numbers with numbers
+and text with text. Remember to quote the path in your shell.
+
+```
+$ jsonlens get shop.json 'menu[?(@.price > 3)].item' --compact
+["Cold Brew","Croissant"]
+[exit 0]
+
+$ jsonlens get shop.json 'menu[?(@.item == "Espresso")].tags' --compact
+[["hot","coffee"]]
+[exit 0]
+
+$ jsonlens get shop.json 'menu[?(@.vegan == false)]' --paths
+menu[2] = {"item":"Croissant","price":3.25,"vegan":false}
+[exit 0]
+```
+
 ```
 $ jsonlens get shop.json ..name --compact
 ["Maria","oat milk"]
