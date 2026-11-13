@@ -3,7 +3,7 @@
 Supports the subset that `jsonlens schema` writes plus a few common
 keywords: type (string or list), properties, required, items, enum,
 minimum, maximum, minLength, maxLength, pattern, additionalProperties,
-anyOf, oneOf and local $ref ("#/..."). Unknown keywords are ignored.
+minItems, maxItems, uniqueItems, anyOf, oneOf and local $ref ("#/..."). Unknown keywords are ignored.
 """
 
 import json
@@ -46,6 +46,19 @@ def _type_name(value):
     if isinstance(value, str):
         return "string"
     return "array" if isinstance(value, list) else "object"
+
+
+def _canonical(value):
+    """A hashable key where 1 == 1.0 but True != 1 and key order is ignored."""
+    if isinstance(value, bool):
+        return ("b", value)
+    if isinstance(value, (int, float)):
+        return ("n", float(value))
+    if isinstance(value, list):
+        return ("l", tuple(_canonical(v) for v in value))
+    if isinstance(value, dict):
+        return ("o", tuple(sorted((k, _canonical(v)) for k, v in value.items())))
+    return ("s" if isinstance(value, str) else "z", value)
 
 
 def _resolve(ref, root):
@@ -119,6 +132,21 @@ def validate(value, schema, trail=(), root=None):
                     problems.append((trail + (key,), "additional property not allowed"))
                 elif isinstance(extra, dict):
                     problems.extend(validate(value[key], extra, trail + (key,), root))
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            problems.append((trail, f"fewer than minItems {schema['minItems']} items"))
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            problems.append((trail, f"more than maxItems {schema['maxItems']} items"))
+        if schema.get("uniqueItems") is True:
+            seen = {}
+            for index, element in enumerate(value):
+                key = _canonical(element)
+                if key in seen:
+                    problems.append(
+                        (trail + (index,), f"duplicate of item {seen[key]}")
+                    )
+                else:
+                    seen[key] = index
     if isinstance(value, list) and "items" in schema:
         for index, element in enumerate(value):
             problems.extend(validate(element, schema["items"], trail + (index,), root))

@@ -127,6 +127,34 @@ def test_any_of_and_one_of():
     assert msgs("x", one) == [("$", "does not match any of the oneOf schemas")]
 
 
+def test_min_max_items():
+    s = {"minItems": 2, "maxItems": 3}
+    assert msgs([1], s) == [("$", "fewer than minItems 2 items")]
+    assert msgs([1, 2, 3, 4], s) == [("$", "more than maxItems 3 items")]
+    assert validate([1, 2], s) == []
+    assert validate("abc", s) == []
+
+
+def test_unique_items():
+    s = {"uniqueItems": True}
+    assert validate([1, 2, 3], s) == []
+    assert msgs([1, 2, 1.0], s) == [("[2]", "duplicate of item 0")]
+    assert validate([1, True, "1"], s) == []
+    assert msgs([{"a": 1, "b": [1]}, {"b": [1], "a": 1}], s) == [
+        ("[1]", "duplicate of item 0")
+    ]
+    assert validate([1, 1], {"uniqueItems": False}) == []
+
+
+def test_array_keywords_cli(run, write):
+    d = write("d.json", {"tags": ["a", "b", "a"]})
+    s = write("s.json", {"properties": {"tags": {"uniqueItems": True, "maxItems": 2}}})
+    code, out, _ = run("validate", d, s)
+    assert code == 1
+    assert "tags: more than maxItems 2 items" in out
+    assert "tags[2]: duplicate of item 0" in out
+
+
 def test_ref_to_definitions_and_recursion():
     s = {
         "type": "object",

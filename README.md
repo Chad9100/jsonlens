@@ -249,7 +249,8 @@ Options: `--key FIELD`, `--json` (machine-readable), `-q` (exit code only).
 such as one written by `jsonlens schema`. Supported keywords: `type` (a name
 or a list), `properties`, `required`, `items`, `enum`, `minimum`, `maximum`,
 `minLength`, `maxLength`, `pattern` (regex search), `additionalProperties`
-(`false` or a schema), `anyOf`, `oneOf` and local `$ref` (`#/definitions/x`,
+(`false` or a schema), `minItems`, `maxItems`, `uniqueItems`, `anyOf`,
+`oneOf` and local `$ref` (`#/definitions/x`,
 or `#` for the root); anything else is ignored. Every problem is
 reported with its path. Exit code 0 means valid, 1 means problems found.
 `-q` prints nothing. `rules.json` is a hand-written schema (price must be a
@@ -287,6 +288,21 @@ tag: does not match any of the oneOf schemas
 owner: missing required key 'name'
 extra: additional property not allowed
 4 problems
+[exit 1]
+```
+
+Array keywords: `minItems` / `maxItems` bound the length, and
+`"uniqueItems": true` reports each later duplicate (1 and 1.0 are equal,
+`true` and 1 are not, object key order is ignored). With `c.json`
+(`{"tags": ["hot", "cold", "hot"], "sizes": [1]}`) and `lists.json`
+(`tags` unique with `maxItems` 2, `sizes` with `minItems` 2):
+
+```
+$ jsonlens validate c.json lists.json
+tags: more than maxItems 2 items
+tags[2]: duplicate of item 0
+sizes: fewer than minItems 2 items
+3 problems
 [exit 1]
 ```
 
