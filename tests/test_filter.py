@@ -82,6 +82,38 @@ def test_parentheses_around_terms_and_operators_in_strings():
     ]
 
 
+def test_grouping_overrides_precedence():
+    # without grouping: Ann || (Bob && age > 40)  -> Ann
+    assert names('users[?(@.name == "Ann" || @.name == "Bob" && @.age > 40)].name') == ["Ann"]
+    # with grouping: (Ann || Bob) && age > 40  -> Ann
+    assert names('users[?((@.name == "Bob" || @.name == "Cy") && @.active == true)].name') == ["Cy"]
+    assert names('users[?(@.active == true && (@.age > 40 || @.address))].name') == ["Ann", "Cy"]
+
+
+def test_nested_and_quoted_parentheses():
+    assert names('users[?(((@.age > 40 || @.age < 30)) && (@.active == false || @.name == "Ann"))].name') == [
+        "Ann",
+        "Bob",
+    ]
+    doc = {"a": [{"k": "(x"}, {"k": "y)"}, {"k": "z"}]}
+    got = query(doc, parse_path('a[?((@.k == "(x" || @.k == "y)") && @.k)]'))
+    assert [v["k"] for _, v in got] == ["(x", "y)"]
+
+
+def test_parse_grouped_filter():
+    toks = parse_path("a[?((@.x == 1 || @.y == 2) && @.z)]")
+    outer = toks[1].groups
+    assert len(outer) == 1 and len(outer[0]) == 2
+    assert outer[0][0].groups == [[Filter(["x"], "==", 1)], [Filter(["y"], "==", 2)]]
+    assert outer[0][1] == Filter(["z"], None, None)
+
+
+@pytest.mark.parametrize("bad", ["a[?((@.x > 1 ||) && @.y)]", "a[?(() && @.y)]"])
+def test_bad_grouped_filters(bad):
+    with pytest.raises(JsonLensError):
+        parse_path(bad)
+
+
 def test_regex_match():
     assert names('users[?(@.name =~ "^[AB]")].name') == ["Ann", "Bob"]
     assert names("users[?(@.name =~ 'i$' && @.age == 'n/a')].name") == ["Di"]

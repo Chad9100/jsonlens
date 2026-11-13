@@ -44,8 +44,8 @@ Filters select array elements (or object values) by value:
 reaches into nested values, and ordering only compares numbers with numbers
 and text with text. Remember to quote the path in your shell.
 
-Combine conditions with `&&` and `||` (`&&` binds tighter; parentheses may
-wrap a whole term), and match text with a regular expression using
+Combine conditions with `&&` and `||` (`&&` binds tighter; use parentheses,
+nested as deep as you like, to group and override that), and match text with a regular expression using
 `=~` (`re.search` semantics, text values only; write the pattern as a JSON
 string, so `"\\d+"` for `\d+`).
 
@@ -60,6 +60,20 @@ $ jsonlens get shop.json 'menu[?(@.item =~ "^C" || @.price < 3.1)].item' --compa
 
 $ jsonlens get shop.json 'menu[?(@.item =~ "^C" && @.vegan == false)]' --compact
 [{"item":"Croissant","price":3.25,"vegan":false}]
+[exit 0]
+```
+
+Parentheses change the grouping. Here `&&` binds first, so Croissant
+matches on its name alone; grouping the `||` first also requires `tags`,
+which Croissant lacks:
+
+```
+$ jsonlens get shop.json 'menu[?(@.item =~ "^C" || @.price < 3.1 && @.tags)].item' --compact
+["Espresso","Cold Brew","Croissant"]
+[exit 0]
+
+$ jsonlens get shop.json 'menu[?((@.item =~ "^C" || @.price < 3.1) && @.tags)].item' --compact
+["Espresso","Cold Brew"]
 [exit 0]
 ```
 

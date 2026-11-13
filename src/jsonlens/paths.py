@@ -204,7 +204,10 @@ def _compare(a, op, b):
 
 
 class FilterOr:
-    """`[?(A && B || C)]`: OR of AND-groups of Filter terms (`&&` binds tighter)."""
+    """`[?(A && B || C)]`: OR of AND-groups of terms (`&&` binds tighter).
+
+    A term is a Filter or, for a parenthesised sub-expression, another FilterOr.
+    """
 
     def __init__(self, groups):
         self.groups = groups
@@ -279,7 +282,8 @@ def _parse_filter(body, text):
     if len(ors) > 1 or len(_split_on(expr, "&&")) > 1:
         groups = []
         for part in ors:
-            terms = [_parse_term(_strip_parens(t), text) for t in _split_on(part, "&&")]
+            # a parenthesised operand may itself contain && / ||, so recurse
+            terms = [_parse_filter(t, text) for t in _split_on(part, "&&")]
             groups.append(terms)
         return FilterOr(groups)
     return _parse_term(expr, text)

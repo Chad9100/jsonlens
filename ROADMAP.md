@@ -4,7 +4,8 @@ Ideas for future versions, roughly in priority order. (Done: recursive
 descent `..name`, filter expressions `[?(@.age > 30)]`, filter `&&` / `||`
 and `=~` regex matching, `diff --key`, `get --format csv|tsv`, `validate`,
 validate `pattern`/`oneOf`/`anyOf`/`additionalProperties`/local `$ref`,
-validate `minItems`/`maxItems`/`uniqueItems`.)
+validate `minItems`/`maxItems`/`uniqueItems`, parentheses grouping in
+filters.)
 
 1. **Schema output improvements**: string `format` detection (dates, emails,
    UUIDs), `enum` for low-cardinality strings, and min/max for numbers.
@@ -16,4 +17,6 @@ validate `minItems`/`maxItems`/`uniqueItems`.)
    `minProperties`/`maxProperties`, remote `$ref`.
 5. **Streaming for very large files** so `tree` and `schema` do not need the
    whole document in memory.
-6. **Parentheses grouping in filters** to override `&&` / `||` precedence.
+6. **Sorting and limiting in `get`**: `--sort FIELD` and `--limit N` for
+   lists of objects.
+7. **Filter functions** such as `length(@.tags) > 1` and `@.name in [..]`.
